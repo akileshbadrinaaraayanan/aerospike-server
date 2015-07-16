@@ -1225,12 +1225,13 @@ bool as_query_match_string_fromval(as_query_transaction * qtr, as_val *v, as_sin
 	}
 
 	char * str_val = as_string_get(as_string_fromval(v));
-	cf_digest str_digest;
-	cf_digest_compute(str_val, strlen(str_val), &str_digest);
-
-	if (memcmp(&str_digest, &skey->key.str_key, AS_DIGEST_KEY_SZ)) {
-		cf_debug(AS_QUERY, "as_query_record_matches: sindex key does not matches bin value in record."
-				" skey %"PRIu64" value in bin %"PRIu64"", skey->key.str_key, str_digest);
+	uint32_t slength = strlen(str_val);	
+	if(slength != strlen(qtr->srange->start.actual)) {
+		return false;
+	}
+	else if (memcmp(str_val, qtr->srange->start.actual, slength)) {
+		cf_debug(AS_QUERY, "as_query_record_matches: query key does not matches bin value in record."
+				" skey %"PRIu64" value in bin %"PRIu64"", qtr->srange->start.actual, str_val);
 		return false;
 	}
 	return true;
@@ -1352,17 +1353,19 @@ as_query_record_matches(as_query_transaction *qtr, as_storage_rd *rd, as_sindex_
 				break;
 			}
 
-			uint32_t psz = 32;
+			uint32_t psz = 0;
 			as_particle_tobuf(b, NULL, &psz);
 			char buf[psz + 1];
 			as_particle_tobuf(b, (uint8_t *) buf, &psz);
 			buf[psz]     = '\0';
-			cf_digest bin_digest;
-			cf_digest_compute( buf, psz, &bin_digest);
-			if (memcmp(&skey->key.str_key, &bin_digest, AS_DIGEST_KEY_SZ)) {
-				cf_debug(AS_QUERY, "as_query_record_matches: sindex key does not matches bin value in record."
-				" skey %"PRIu64" value in bin %"PRIu64"", skey->key.str_key, bin_digest);
-	
+ 
+			if (psz != strlen(qtr->srange->start.actual)) {
+				matches = false;
+				break;
+			}
+			else if(memcmp(qtr->srange->start.actual, buf, psz)){
+				cf_debug(AS_QUERY, "as_query_record_matches: query key does not matches bin value in record."
+				" skey %"PRIu64" value in bin %"PRIu64"", qtr->srange->start.actual, buf);
 				matches = false;
 				break;
 			}

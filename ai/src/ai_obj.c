@@ -98,7 +98,7 @@ static int ai_objCmp(ai_obj *a, ai_obj *b)
 	} else if (C_IS_X(a->type)) {
 		return (a->x == b->x) ? 0 : ((a->x > b->x) ? 1 : -1);
 	} else if (C_IS_Y(a->type)) {
-		return u160Cmp(&a->y, &b->y);
+		return u160Cmp_string20(&a->y, &b->y);
 	} else if (C_IS_I(a->type) || C_IS_P(a->type)) {
 		return (long) (a->i - b->i);
 	} else {

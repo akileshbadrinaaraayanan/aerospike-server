@@ -435,7 +435,7 @@ btEntry *btRangeNext(btSIter *siter, bool asc) { //printf("btRangeNext\n");
 		return over ? NULL : &(siter->be);
 	} else if (C_IS_Y(siter->ktype)) {
 		uint160 yy = siter->key.y;
-		int ret = u160Cmp(&yy, &siter->x.highy);
+		int ret = u160Cmp_string20(&yy, &siter->x.highy);
 		if (!ret) siter->x.finished = 1;                      /* exact match */
 		if (!asc) { //TODO is ENDIANness of memcpy() correct
 			uint32 low;

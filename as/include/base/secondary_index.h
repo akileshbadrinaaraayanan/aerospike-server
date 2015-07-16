@@ -57,6 +57,7 @@
 #define AS_SINDEX_MAX_PATH_LENGTH  256
 #define AS_SINDEX_MAX_DEPTH        10
 #define AS_SINDEX_TYPE_STR_SIZE    20
+#define AS_SINDEX_STRING_KEY_SZ    20
 // **************************************************************************************************
 
 
@@ -182,7 +183,7 @@ typedef struct sbin_value_pool_s{
 typedef struct as_sindex_bin_s {
 	union {                       // we use this if we need to store only one value inside sbin.
 		int64_t       int_val;    // accessing this is much faster than accessing any other value
-		cf_digest     str_val;    // value on the stack.
+		char          str_val[AS_SINDEX_STRING_KEY_SZ];    // value on the stack.
 	} value;
 	uint64_t          num_values; 
 	void            * values;     // If there are more than 1 value in the sbin, we use this to
@@ -204,13 +205,14 @@ typedef struct as_sindex_bin_data_s {
 	union {
 		int64_t  i64;
 	} u;
-	cf_digest         digest;
+	char              string20[AS_SINDEX_STRING_KEY_SZ];
+	char   *          actual;
 } as_sindex_bin_data;
 
 // Caution: Using this will waste 12 bytes per long type skey 
 typedef struct as_sindex_key_s {
 	union {
-		cf_digest str_key;
+		char      str_key[AS_SINDEX_STRING_KEY_SZ];
 		uint64_t  int_key;
 	} key;
 } as_sindex_key;

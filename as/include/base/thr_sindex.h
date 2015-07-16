@@ -53,8 +53,8 @@ do {                                                                            
 #define SINDEX_GC_NUM_OBJS_PER_ARR 20
 
 typedef struct acol_digest_t {
-	cf_digest dig;
-	ai_obj    acol;
+	cf_digest  dig;
+	ai_obj     acol;
 } acol_digest;
 
 typedef struct objs_to_defrag_arr_t {

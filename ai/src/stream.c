@@ -319,6 +319,13 @@ int u160Cmp(void *s1, void *s2) {
 		return u1 == u2 ? 0 : (u1 > u2) ? 1 : -1;
 	} else return             (x1 > x2) ? 1 : -1;
 }
+
+int u160Cmp_string20(void *s1, void *s2) {
+	char *p1 = (char *)s1;
+	char *p2 = (char *)s2;
+
+	return strncmp(p1, p2, AS_SINDEX_STRING_KEY_SZ);
+}
 // OTHER_BT_COMP OTHER_BT_COMP OTHER_BT_COMP OTHER_BT_COMP OTHER_BT_COMP
 static inline int UCmp(void *s1, void *s2) { //struct: first arg is UINT
 	ulk  *ul1 = (ulk *)s1;
@@ -384,17 +391,31 @@ static inline int YCmp(void *s1, void *s2) {
 	uint160  y2  = yu2->key;
 	return u160Cmp(&y1, &y2);
 }
+
+static inline int YCmp_string20(void *s1, void *s2) {
+        yuk     *yu1 = (yuk *)s1;
+        yuk     *yu2 = (yuk *)s2;
+        uint160  y1  = yu1->key;
+        uint160  y2  = yu2->key;
+        return u160Cmp_string20(&y1, &y2);
+}
 int yuCmp(void *s1, void *s2) {
-	return YCmp(s1, s2);
+	return YCmp_string20(s1, s2);
 }
+
 int ylCmp(void *s1, void *s2) {
-	return YCmp(s1, s2);
+	return YCmp_string20(s1, s2);
 }
+
+int ylCmp_string20(void *s1, void *s2){
+	return YCmp_string20(s1, s2);
+}
+
 int yxCmp(void *s1, void *s2) {
-	return YCmp(s1, s2);
+	return YCmp_string20(s1, s2);
 }
 int yyCmp(void *s1, void *s2) {
-	return YCmp(s1, s2);
+	return YCmp_string20(s1, s2);
 }
 
 // PK_COMP PK_COMP PK_COMP PK_COMP PK_COMP PK_COMP PK_COMP PK_COMP PK_COMP
@@ -456,7 +477,7 @@ int btU128Cmp(void *a, void *b) {                      //printf("btU128Cmp\n");
 	return x1 == x2 ? 0 : (x1 > x2) ? 1 : -1;
 }
 int btU160Cmp(void *a, void *b) {                      //printf("btU160Cmp\n");
-	return u160Cmp(a, b);
+	return u160Cmp_string20(a, b);
 }
 int btFloatCmp(void *a, void *b) {                    //printf("btFloatCmp\n");
 	float key1 = streamFloatToFloat(a, NULL);

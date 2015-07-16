@@ -886,7 +886,7 @@ as_sindex__op_by_sbin(as_namespace *ns, const char *set, int numbins, as_sindex_
 					skey = (void *)&(sbin->value.str_val);
 				}
 				else {
-					skey = (void *)((cf_digest *)(sbin->values) + j);
+					skey = (void *)((char *)(sbin->values) + (j * AS_SINDEX_STRING_KEY_SZ));
 				}
 			}
 			else {
@@ -2166,6 +2166,9 @@ as_sindex_range_free(as_sindex_range **range)
 	as_sindex_range *sk = (*range);
 //	as_sindex_sbin_freeall(&sk->start, sk->num_binval);
 //	as_sindex_sbin_freeall(&sk->end, sk->num_binval);
+	if (sk->start.actual) {
+		cf_free(sk->start.actual);
+	}
 	cf_free(sk);
 	return AS_SINDEX_OK;
 }
@@ -2384,7 +2387,19 @@ as_sindex_range_from_msg(as_namespace *ns, as_msg *msgp, as_sindex_range *srange
                            start_binval, end_binval);
 				goto Cleanup;
 			}
-			cf_digest_compute(start_binval, startl, &(start->digest));
+			start->actual = (char*) cf_malloc (startl+1);
+			
+			memcpy(start->actual, start_binval, startl);
+			
+			start->actual[startl] = '\0';
+			bzero(start->string20, AS_SINDEX_STRING_KEY_SZ);
+		
+			if(startl >= AS_SINDEX_STRING_KEY_SZ) {
+				memcpy(start->string20, start_binval, AS_SINDEX_STRING_KEY_SZ);
+			}
+			else {
+				memcpy(start->string20, start_binval, startl);
+			}		
 			cf_debug(AS_SINDEX, "Range is equal %s ,%s",
                                start_binval, end_binval);
 		} else {
@@ -2475,7 +2490,7 @@ as_sindex_add_sbin_value_in_heap(as_sindex_bin * sbin, void * val)
 		data_sz = sizeof(uint64_t);
 	}
 	else if (sbin->type == AS_PARTICLE_TYPE_STRING) {
-		data_sz = sizeof(cf_digest);
+		data_sz = sizeof(char) * AS_SINDEX_STRING_KEY_SZ;
 	}
 	else {
 		cf_warning(AS_SINDEX, "Bad type of data to index %d", sbin->type);
@@ -2540,7 +2555,7 @@ as_sindex_add_sbin_value_in_heap(as_sindex_bin * sbin, void * val)
 		}
 	}
 	else if (sbin->type == AS_PARTICLE_TYPE_STRING) {
-		if (!memcpy((void *)((cf_digest *)sbin->values + sbin->num_values), (void *)val, data_sz)) {
+		if (!memcpy((void *)((char *)sbin->values + (sbin->num_values * AS_SINDEX_STRING_KEY_SZ)), (void *)val, data_sz)) {
 			cf_warning(AS_SINDEX, "memcpy failed");
 			return AS_SINDEX_ERR;
 		}
@@ -2607,73 +2622,69 @@ as_sindex_add_integer_to_sbin(as_sindex_bin * sbin, uint64_t val)
 }
 
 as_sindex_status
-as_sindex_add_digest_to_sbin(as_sindex_bin * sbin, cf_digest val_dig)
-{
-	// If this is the first value coming to the sbin
-	// 		assign the value to the local variable of struct.
-	// Else
-	// 		If to_free is true or stack_buf is full
-	// 			add value to the heap
-	// 		else 
-	// 			If needed copy the values stored in sbin to stack_buf
-	// 			add the value to end of stack buf
-
-	sbin_value_pool * stack_buf = sbin->stack_buf;
-	// If this is the first value coming to the sbin
-	// 		assign the value to the local variable of struct.	
-	if (sbin->num_values == 0 ) {
-		sbin->value.str_val = val_dig;
-		sbin->num_values++;
-	}
-	else if (sbin->num_values > 0) {
-	
-	// Else
-	// 		If to_free is true or stack_buf is full
-	// 			add value to the heap
-		if (sbin->to_free || (stack_buf->used_sz + sizeof(cf_digest)) > AS_SINDEX_VALUESZ_ON_STACK ) {
-			if (as_sindex_add_sbin_value_in_heap(sbin, (void *)&val_dig)) {
-				cf_warning(AS_SINDEX, "Adding value in sbin failed.");
-				return AS_SINDEX_ERR;
-			}
-		}
-		else {
-	// 		else 
-	//			If needed copy the values stored in sbin to stack_buf
-			if (sbin->num_values == 1) {
-				sbin->values = stack_buf->value + stack_buf->used_sz;
-				if (!memcpy(sbin->values, (void *)&sbin->value.str_val, sizeof(cf_digest))) {
-					cf_warning(AS_SINDEX, "Memcpy failed");
-					return AS_SINDEX_ERR;
-				}
-				stack_buf->used_sz += sizeof(cf_digest);
-			}
-
-	// 			add the value to end of stack buf
-			if (!memcpy((void *)((cf_digest *)sbin->values + sbin->num_values), (void *)&val_dig, sizeof(cf_digest))) {
-				cf_warning(AS_SINDEX, "Memcpy failed");
-				return AS_SINDEX_ERR;
-			}
-			sbin->num_values++;
-			stack_buf->used_sz += sizeof(cf_digest);
-		}
-	}
-	else {
-		cf_warning(AS_SINDEX, "numvalues is coming as negative. Possible memory corruption in sbin.");
-		return AS_SINDEX_ERR;
-	}
-	return AS_SINDEX_OK;
-}
-
-as_sindex_status
 as_sindex_add_string_to_sbin(as_sindex_bin * sbin, char * val)
 {
-	if (!val) {
+	if(!val) {
 		return AS_SINDEX_ERR;
 	}
-	// Calculate digest and cal add_digest_to_sbin	
-	cf_digest val_dig;
-	cf_digest_compute(val, strlen(val), &val_dig);
-	return as_sindex_add_digest_to_sbin(sbin, val_dig);
+
+        char val_string20[AS_SINDEX_STRING_KEY_SZ]={0};
+        memcpy(val_string20, val, strlen(val));
+	
+        // If this is the first value coming to the sbin
+        //              assign the value to the local variable of struct.
+        // Else
+        //              If to_free is true or stack_buf is full
+        //                      add value to the heap
+        //              else 
+        //                      If needed copy the values stored in sbin to stack_buf
+        //                      add the value to end of stack buf
+
+        sbin_value_pool * stack_buf = sbin->stack_buf;
+        // If this is the first value coming to the sbin
+        //              assign the value to the local variable of struct.       
+
+	if (sbin->num_values == 0 ) {
+		memcpy(sbin->value.str_val, val_string20, AS_SINDEX_STRING_KEY_SZ);
+                sbin->num_values++;
+        }
+        else if (sbin->num_values > 0) {
+
+        // Elsei
+        //              If to_free is true or stack_buf is full
+        //                      add value to the heap
+                if (sbin->to_free || (stack_buf->used_sz + (sizeof(char) * AS_SINDEX_STRING_KEY_SZ))  > AS_SINDEX_VALUESZ_ON_STACK ) {
+                        if (as_sindex_add_sbin_value_in_heap(sbin, (void *)&val_string20)) {
+                                cf_warning(AS_SINDEX, "Adding value in sbin failed.");
+                                return AS_SINDEX_ERR;
+                        }
+                }
+                else {
+        //              else 
+        //                      If needed copy the values stored in sbin to stack_buf
+                      if (sbin->num_values == 1) {
+                                sbin->values = stack_buf->value + stack_buf->used_sz;
+                                if (!memcpy(sbin->values, (void *)&sbin->value.str_val, (sizeof(char) * AS_SINDEX_STRING_KEY_SZ))) {
+                                        cf_warning(AS_SINDEX, "Memcpy failed");
+                                        return AS_SINDEX_ERR;
+                                }
+                                stack_buf->used_sz += (sizeof(char) * AS_SINDEX_STRING_KEY_SZ);
+                        }
+        //                      add the value to end of stack buf
+                        if (!memcpy((void *)((char *)sbin->values  + (sbin->num_values * AS_SINDEX_STRING_KEY_SZ)), (void *)&val_string20, (sizeof(char) * AS_SINDEX_STRING_KEY_SZ)))
+			 {     
+			        cf_warning(AS_SINDEX, "Memcpy failed");
+                                return AS_SINDEX_ERR;
+                        }
+                        sbin->num_values++;
+                        stack_buf->used_sz += (sizeof(char) * (AS_SINDEX_STRING_KEY_SZ));
+                }
+        }
+        else {
+                cf_warning(AS_SINDEX, "numvalues is coming as negative. Possible memory corruption in sbin.");
+                return AS_SINDEX_ERR;
+        }
+        return AS_SINDEX_OK;
 }
 
 as_sindex_status
@@ -2993,12 +3004,18 @@ static bool as_sindex_compare_list_hash(as_val * element, void * udata)
 		if (element->type == AS_STRING) {
 			char * str_val = as_string_get(as_string_fromval(element));
 			bool value;
-			// Compute the digest as a fix sized key of the hash.
-			cf_digest str_val_dig;
-			cf_digest_compute(str_val, strlen(str_val), &str_val_dig);
-
-			if (shash_get(h, &str_val_dig, &value) != SHASH_OK) {
-				as_sindex_add_digest_to_sbin(list_comp_add->sbin, str_val_dig);
+			
+			char str_val_string20[AS_SINDEX_STRING_KEY_SZ]={0};
+			uint32_t slength = 0;
+			slength = strlen(str_val);	
+			if(slength >= AS_SINDEX_STRING_KEY_SZ) {
+				memcpy(str_val_string20, str_val, AS_SINDEX_STRING_KEY_SZ);
+			}
+ 			else { 
+				memcpy(str_val_string20, str_val, slength);
+			}
+			if (shash_get(h, &str_val_string20, &value) != SHASH_OK) {
+				as_sindex_add_string_to_sbin(list_comp_add->sbin, str_val_string20);
 			}
 		}
 	}
@@ -3111,11 +3128,16 @@ static bool as_sindex_mapkeys_to_hash(const as_val * key, const as_val * val, vo
 		if (key->type == AS_STRING) {
 			char * str_val = as_string_get(as_string_fromval(key));
 			bool value = true;
-			// Compute the digest as a fix sized key of the hash.
-			cf_digest str_val_dig;
-			cf_digest_compute(str_val, strlen(str_val), &str_val_dig);
 			
-			if (shash_put(h, &str_val_dig, &value) != SHASH_OK) {
+			char str_val_string20[AS_SINDEX_STRING_KEY_SZ]={0};
+			uint32_t slength = strlen(str_val);
+			if(slength >= AS_SINDEX_STRING_KEY_SZ) {
+				 memcpy(str_val_string20, str_val, AS_SINDEX_STRING_KEY_SZ);
+			}
+			else { 
+				memcpy(str_val_string20, str_val, slength);
+			}
+			if (shash_put(h, &str_val_string20, &value) != SHASH_OK) {
 				cf_debug(AS_SINDEX, "shash put failed");
 				return false;
 			}
@@ -3148,11 +3170,16 @@ static bool as_sindex_compare_mapkeys_hash(const as_val * key, const as_val * va
 			char * str_val = as_string_get(as_string_fromval(key));
 			bool value;
 			// Compute the digest as a fix sized key of the hash.
-			cf_digest str_val_dig;
-			cf_digest_compute(str_val, strlen(str_val), &str_val_dig);
-
-			if (shash_get(h, &str_val_dig, &value) != SHASH_OK) {
-				as_sindex_add_digest_to_sbin(map_comp_add->sbin, str_val_dig);
+			char str_val_string20[AS_SINDEX_STRING_KEY_SZ] = {0};
+                      	uint32_t slength = strlen(str_val); 
+			 if(slength >=  AS_SINDEX_STRING_KEY_SZ) {
+                                 memcpy(str_val_string20, str_val, AS_SINDEX_STRING_KEY_SZ);
+                        }
+			else {
+                                memcpy(str_val_string20, str_val, slength);
+			}
+			if (shash_get(h, &str_val_string20, &value) != SHASH_OK) {
+				as_sindex_add_string_to_sbin(map_comp_add->sbin, str_val_string20);
 			}
 		}
 	}
@@ -3304,12 +3331,17 @@ static bool as_sindex_compare_mapvalues_hash(const as_val * key, const as_val * 
 		if (value->type == AS_STRING) {
 			char * str_val = as_string_get(as_string_fromval(value));
 			bool value;
-			// Compute the digest as a fix sized key of the hash.
-			cf_digest str_val_dig;
-			cf_digest_compute(str_val, strlen(str_val), &str_val_dig);
 
-			if (shash_get(h, &str_val_dig, &value) != SHASH_OK) {
-				as_sindex_add_digest_to_sbin(map_comp_add->sbin, str_val_dig);
+			char str_val_string20[AS_SINDEX_STRING_KEY_SZ] = {0};
+			uint32_t slength = strlen(str_val);
+			if( slength >= AS_SINDEX_STRING_KEY_SZ) {
+				memcpy(str_val_string20, str_val, AS_SINDEX_STRING_KEY_SZ);
+			}
+			else {
+				memcpy(str_val_string20, str_val, slength);
+ 			}
+			if (shash_get(h, &str_val_string20, &value) != SHASH_OK) {
+				as_sindex_add_string_to_sbin(map_comp_add->sbin, str_val_string20);
 			}
 		}
 	}
@@ -3487,14 +3519,21 @@ as_sindex_sbin_from_sindex(as_sindex * si, as_bin *b, as_sindex_bin * sbin, as_v
 				found = true;
 				byte* bin_val;
 				bool valid_str = true;
-				cf_digest buf_dig;
+				char buf_string20[AS_SINDEX_STRING_KEY_SZ]={0};
+				
 				if (from_buf) {
 					if ( buf_sz < 0 || buf_sz > AS_SINDEX_MAX_STRING_KSIZE) {
 						cf_warning( AS_SINDEX, "sindex key size out of bounds %d ", buf_sz);
 						valid_str = false;
 					}
 					else {
-						cf_digest_compute(buf, buf_sz, &buf_dig);
+						char *p1 = (char *)buf;
+						if(buf_sz >= AS_SINDEX_STRING_KEY_SZ) {
+							memcpy(buf_string20, p1, AS_SINDEX_STRING_KEY_SZ);
+						}
+						else { 
+							memcpy(buf_string20, p1, buf_sz);
+						}
 					}
 				}
 				else {
@@ -3505,15 +3544,20 @@ as_sindex_sbin_from_sindex(as_sindex * si, as_bin *b, as_sindex_bin * sbin, as_v
 					}
 					else {
 						as_particle_p_get(b, &bin_val, &valsz);
-						cf_digest_compute(bin_val, valsz, &buf_dig);
+						char *p2 = (char *)bin_val;
+          					if(valsz >= AS_SINDEX_STRING_KEY_SZ)
+							memcpy(buf_string20, p2, AS_SINDEX_STRING_KEY_SZ);
+						else
+							memcpy(buf_string20, p2, valsz);   
 					}
 				}
+
 				if (valid_str) {					
-					if (as_sindex_add_digest_to_sbin(sbin, buf_dig) == AS_SINDEX_OK) {
-						if (sbin->num_values) {
-							sindex_found++;
+					if(as_sindex_add_string_to_sbin(sbin, buf_string20) == AS_SINDEX_OK) {
+					    if(sbin->num_values) {
+						   sindex_found++; 	 
 						}
-					}
+					}	
 				}
 			}
 		}
@@ -3701,14 +3745,23 @@ as_sindex_diff_sbins_from_sindex(as_sindex * si, as_bin * b, byte * buf, uint32_
 				bool valid_binstr = true;
 				bool valid_bufstr = true;
 				byte* bin_str;
-				cf_digest bin_dig, buf_dig;
+				
+				char bin_string20[AS_SINDEX_STRING_KEY_SZ] = {0};
+				char buf_string20[AS_SINDEX_STRING_KEY_SZ] = {0};
+				
 				bool has_changed = true;
 				if ( buf_sz < 0 || buf_sz > AS_SINDEX_MAX_STRING_KSIZE) {
 					cf_warning( AS_SINDEX, "sindex key size out of bounds %d ", buf_sz);
 					valid_bufstr = false;
 				}
 				else {
-					cf_digest_compute(buf, buf_sz, &buf_dig);
+					char *p1 = (char *)buf;
+					if(buf_sz >= AS_SINDEX_STRING_KEY_SZ) {
+						memcpy(buf_string20, p1, AS_SINDEX_STRING_KEY_SZ);
+					}
+					else { 
+						memcpy(buf_string20, p1, buf_sz); 
+					}
 				}
 
 				as_particle_tobuf(b, 0, &valsz);
@@ -3718,17 +3771,22 @@ as_sindex_diff_sbins_from_sindex(as_sindex * si, as_bin * b, byte * buf, uint32_
 				}
 				else {
 					as_particle_p_get( b, &bin_str, &valsz);
-					cf_digest_compute(bin_str, valsz, &bin_dig);
+					char *p2 = (char *)bin_str;
+					if(valsz >= AS_SINDEX_STRING_KEY_SZ) {
+						memcpy(bin_string20, p2, AS_SINDEX_STRING_KEY_SZ);
+					}
+					else { 
+						memcpy(bin_string20, p2, valsz);
+				         }
 				}
-
 				if (valid_bufstr && valid_binstr) {
-					has_changed = memcmp(&buf_dig, &bin_dig, sizeof(cf_digest)) ? true : false;
+					has_changed = memcmp(&buf_string20, &bin_string20, (sizeof(char) * AS_SINDEX_STRING_KEY_SZ)) ? true : false;
 				}
 
 				if (has_changed) {
 					if (valid_binstr) {
 						as_sindex_init_sbin(sbin, AS_SINDEX_OP_DELETE, imd_btype, simatch);
-						if (as_sindex_add_digest_to_sbin(sbin, bin_dig) == AS_SINDEX_OK) {
+						if (as_sindex_add_string_to_sbin(sbin, bin_string20) == AS_SINDEX_OK) {
 							if (sbin->num_values) {
 								sindex_found++;
 								sbin = sbin + sindex_found;
@@ -3737,7 +3795,7 @@ as_sindex_diff_sbins_from_sindex(as_sindex * si, as_bin * b, byte * buf, uint32_
 					}
 					if (valid_bufstr) {
 						as_sindex_init_sbin(sbin, AS_SINDEX_OP_INSERT, imd_btype, simatch);
-						if (as_sindex_add_digest_to_sbin(sbin, buf_dig) == AS_SINDEX_OK) {
+						if (as_sindex_add_string_to_sbin(sbin, buf_string20) == AS_SINDEX_OK) {
 							if (sbin->num_values) {
 								sindex_found++;
 							}

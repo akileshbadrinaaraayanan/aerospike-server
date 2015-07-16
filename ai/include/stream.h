@@ -74,6 +74,7 @@ int uintCmp (void *s1, void *s2);
 int ulongCmp(void *s1, void *s2);
 int u128Cmp (void *s1, void *s2);
 int u160Cmp (void *s1, void *s2);
+int u160Cmp_string20(void *s1, void *s2);
 
 int uuCmp   (void *s1, void *s2);
 int ulCmp   (void *s1, void *s2);
@@ -89,6 +90,7 @@ int xxCmp   (void *s1, void *s2);
 int xyCmp   (void *s1, void *s2);
 int yuCmp   (void *s1, void *s2);
 int ylCmp   (void *s1, void *s2);
+int ylCmp_string20 (void *s1, void *s2);
 int yxCmp   (void *s1, void *s2);
 int yyCmp   (void *s1, void *s2);
 

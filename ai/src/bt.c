@@ -83,7 +83,7 @@ static bt *createYUBT(int num, uchar btype) {         //printf("createYUBT\n");
 	CREATE_OBT(COL_TYPE_U160, YU_SIZE, BTFLAG_U160_UINT, yuCmp);
 }
 static bt *createYLBT(int num, uchar btype) {         //printf("createYLBT\n");
-	CREATE_OBT(COL_TYPE_U160, YL_SIZE, BTFLAG_U160_ULONG, ylCmp);
+	CREATE_OBT(COL_TYPE_U160, YL_SIZE, BTFLAG_U160_ULONG, ylCmp_string20);
 }
 static bt *createYXBT(int num, uchar btype) {         //printf("createYXBT\n");
 	CREATE_OBT(COL_TYPE_U160, YX_SIZE, BTFLAG_U160_U128, yxCmp);
@@ -157,7 +157,7 @@ bt *createIBT(uchar ktype, int imatch, uchar btype) {
 		bts.bflag = BTFLAG_U128_ULONG  + BTFLAG_U128_INDEX;
 	} else if C_IS_Y(ktype) { /* NOTE: under the covers: YL */
 		bts.ksize = YL_SIZE;
-		cmp = ylCmp;
+		cmp = ylCmp_string20;
 		bts.bflag = BTFLAG_U160_ULONG  + BTFLAG_U160_INDEX;
 	} else {                  /* STRING or FLOAT */
 		bts.ksize = VOIDSIZE;
@@ -228,7 +228,7 @@ bt *createIndexNode(uchar ktype, uchar obctype) {                /* INODE_BT */
 		bts.ksize = U128SIZE;
 		bts.bflag = BTFLAG_NONE;
 	} else if (C_IS_Y(ktype)) {
-		cmp = u160Cmp;
+		cmp = u160Cmp_string20;
 		bts.ksize = U160SIZE;
 		bts.bflag = BTFLAG_NONE;
 	} else {

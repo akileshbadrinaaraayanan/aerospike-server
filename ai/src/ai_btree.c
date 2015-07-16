@@ -100,6 +100,11 @@ init_ai_objFromDigest(ai_obj *akey, cf_digest *d)
 	init_ai_objU160(akey, *(uint160 *)d);
 }
 
+static void
+init_ai_objFromString20(ai_obj *akey, char *d)
+{
+	init_ai_objU160(akey, *(uint160 *)d);
+}
 
 void
 ai_btree_init(void) {
@@ -623,7 +628,7 @@ ai_btree_key_hash_from_sbin(as_sindex_metadata *imd, as_sindex_bin_data *b)
 	uint64_t u;
 
 	if (C_IS_Y(imd->dtype)) {
-		char *x = (char *) &b->digest; // x += 4;
+		char *x = (char *) &b->string20; // x += 4;
 		u = ((* (uint128 *) x) % imd->nprts);
 	} else {
 		u = (((uint64_t) b->u.i64) % imd->nprts);
@@ -638,7 +643,7 @@ ai_btree_key_hash(as_sindex_metadata *imd, void *skey)
 	uint64_t u;
 
 	if (C_IS_Y(imd->dtype)) {
-		char *x = (char *) ((cf_digest *)skey); // x += 4;
+		char *x = (char *) skey;
 		u = ((* (uint128 *) x) % imd->nprts);
 	} else {
 		u = ((*(uint64_t*)skey) % imd->nprts);
@@ -717,7 +722,7 @@ btree_addsinglerec(as_sindex_metadata *imd, ai_obj * key, cf_digest *dig, cf_ll 
 								bool * is_partition_qnode, bool qnodes_pre_reserved)
 {
 	// The digests which belongs to one of the qnode are elligible to go into recl
-	as_partition_id pid =  as_partition_getid(*dig);
+	as_partition_id pid = as_partition_getid(*dig);
 	if (qnodes_pre_reserved) {
 		if (!is_partition_qnode[pid]) {
 			return 0;
@@ -753,7 +758,7 @@ btree_addsinglerec(as_sindex_metadata *imd, ai_obj * key, cf_digest *dig, cf_ll 
 
 	// Copy the key
 	if (C_IS_Y(imd->dtype)) {
-		memcpy(&skv_arr->skeys[skv_arr->num].key.str_key, &key->y, CF_DIGEST_KEY_SZ);
+		memcpy(&skv_arr->skeys[skv_arr->num].key.str_key, &key->y, AS_SINDEX_STRING_KEY_SZ);
 	}
 	else {
 		skv_arr->skeys[skv_arr->num].key.int_key = key->l;
@@ -948,7 +953,7 @@ ai_btree_query(as_sindex_metadata *imd, as_sindex_range *srange, as_sindex_qctx 
 		ai_obj afk;
 		init_ai_obj(&afk);
 		if (C_IS_Y(imd->dtype)) {
-			init_ai_objFromDigest(&afk, &srange->start.digest);
+			init_ai_objFromString20(&afk, srange->start.string20);
 		}
 		else {
 			init_ai_objLong(&afk, srange->start.u.i64);
@@ -968,7 +973,7 @@ ai_btree_put(as_sindex_metadata *imd, as_sindex_pmetadata *pimd, void *skey, cf_
 
 	ai_obj ncol;
 	if (C_IS_Y(imd->dtype)) {
-		init_ai_objFromDigest(&ncol, (cf_digest*)skey);
+		init_ai_objFromString20(&ncol, (char *)skey);
 	}
 	else {
 		init_ai_objLong(&ncol, *(ulong *)skey);
@@ -1010,7 +1015,7 @@ ai_btree_delete(as_sindex_metadata *imd, as_sindex_pmetadata *pimd, void * skey,
 
 	ai_obj ncol;
 	if (C_IS_Y(imd->dtype)) {
-		init_ai_objFromDigest(&ncol, (cf_digest *)skey);
+		init_ai_objFromString20(&ncol, (char *)skey);
 	}
 	else {
 		init_ai_objLong(&ncol, *(ulong *)skey);
