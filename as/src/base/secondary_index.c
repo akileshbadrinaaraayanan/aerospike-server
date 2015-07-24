@@ -2368,38 +2368,62 @@ as_sindex_range_from_msg(as_namespace *ns, as_msg *msgp, as_sindex_range *srange
 								start->u.i64, end->u.i64);
 		} else if (type == AS_PARTICLE_TYPE_STRING) {
 			// get start point
-			uint32_t startl    = ntohl(*((uint32_t *)data));
-			data              += sizeof(uint32_t);
-			char* start_binval       = (char *)data;
-			data              += startl;
-			srange->isrange    = FALSE;
+			uint32_t startl          =  ntohl(*((uint32_t *)data));
+			data                    +=  sizeof(uint32_t);
+			char* start_binval       =  (char *)data;
+			uint32_t sblength        =  strlen(start_binval);
+			data                    +=  sblength;
 
 			if ((startl <= 0) || (startl >= AS_SINDEX_MAX_STRING_KSIZE)) {
 				cf_warning(AS_SINDEX, "Out of bound query key size %ld", startl);
 				goto Cleanup;
 			}
-			uint32_t endl	   = ntohl(*((uint32_t *)data));
+	
+			uint32_t endl	  = ntohl(*((uint32_t *)data));
 			data              += sizeof(uint32_t);
-			char * end_binval        = (char *)data;
-			if (startl != endl && strncmp(start_binval, end_binval, startl)) {
-				cf_warning(AS_SINDEX,
-                           "Only Equality Query Supported in Strings %s-%s",
-                           start_binval, end_binval);
-				goto Cleanup;
-			}
-			start->actual = (char*) cf_malloc (startl+1);
+			//char * end_binval        = (char *)data;
+			//TODO end_binval is hardcoded. Make changes in aql and client.
+			//TODO end_binval is always assigned "z", so EQUALITY query on strings also behaves as RANGE query with upper bound "z"
+			char * end_binval = "z";     //hard-coded
+			uint32_t eblength =  strlen(end_binval);
+			data              += eblength;
 			
+			// Ideally in all lines below, eblength can be replaced by endl
+			start->actual = (char*) cf_malloc (startl+1);
+			end->actual    = (char*) cf_malloc (eblength+1);
+ 			
 			memcpy(start->actual, start_binval, startl);
+			memcpy(end->actual, end_binval, eblength);
 			
 			start->actual[startl] = '\0';
+			end->actual[eblength] = '\0';
+
 			bzero(start->string20, AS_SINDEX_STRING_KEY_SZ);
+			bzero(end->string20, AS_SINDEX_STRING_KEY_SZ);
 		
 			if(startl >= AS_SINDEX_STRING_KEY_SZ) {
 				memcpy(start->string20, start_binval, AS_SINDEX_STRING_KEY_SZ);
 			}
 			else {
 				memcpy(start->string20, start_binval, startl);
-			}		
+			}
+			
+			if(eblength >= AS_SINDEX_STRING_KEY_SZ) {
+                                memcpy(end->string20, end_binval, AS_SINDEX_STRING_KEY_SZ);
+                        }
+                        else {
+                                memcpy(end->string20, end_binval, eblength);
+                        } 
+			
+			if (strcmp(start->actual, end->actual) > 0) {
+                                cf_warning(AS_SINDEX, "Invalid range from %s to %s", start->actual, end->actual);
+                                goto Cleanup;
+                        } else if (strcmp(start->actual, end->actual) == 0) {
+                                srange->isrange = FALSE;
+                        } else {
+                                srange->isrange = TRUE;
+                        }
+		
 			cf_debug(AS_SINDEX, "Range is equal %s ,%s",
                                start_binval, end_binval);
 		} else {

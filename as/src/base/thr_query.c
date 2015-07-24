@@ -1225,7 +1225,9 @@ bool as_query_match_string_fromval(as_query_transaction * qtr, as_val *v, as_sin
 	}
 
 	char * str_val = as_string_get(as_string_fromval(v));
-	uint32_t slength = strlen(str_val);	
+	uint32_t slength = strlen(str_val);
+	
+	if(!qtr->srange->isrange) {    // EQUALITY
 	if(slength != strlen(qtr->srange->start.actual)) {
 		return false;
 	}
@@ -1235,6 +1237,13 @@ bool as_query_match_string_fromval(as_query_transaction * qtr, as_val *v, as_sin
 		return false;
 	}
 	return true;
+	}
+	else {    // RANGE
+	if((strcmp(str_val, qtr->srange->start.actual) >= 0) && (strcmp(str_val, qtr->srange->end.actual) <= 0)) {
+		return true;
+	  }		
+	return false;
+	} 
 }
 
 typedef struct as_sindex_qtr_skey_s {
@@ -1359,18 +1368,31 @@ as_query_record_matches(as_query_transaction *qtr, as_storage_rd *rd, as_sindex_
 			as_particle_tobuf(b, (uint8_t *) buf, &psz);
 			buf[psz]     = '\0';
  
-			if (psz != strlen(qtr->srange->start.actual)) {
+			if(!qtr->srange->isrange) {    // EQUALITY Validation
+
+			if(psz != strlen(qtr->srange->start.actual)) {
 				matches = false;
 				break;
-			}
+			     }
 			else if(memcmp(qtr->srange->start.actual, buf, psz)){
 				cf_debug(AS_QUERY, "as_query_record_matches: query key does not matches bin value in record."
 				" skey %"PRIu64" value in bin %"PRIu64"", qtr->srange->start.actual, buf);
 				matches = false;
 				break;
-			}
+			     }
 			matches = true;
-			break;
+                        break;
+			}
+
+	        	else {    //RANGE Validation
+			
+			if((strcmp(buf, qtr->srange->start.actual) >= 0 ) && (strcmp(buf, qtr->srange->end.actual) <= 0)) {
+				matches = true;
+				break;		
+				}				
+			matches=false;
+			break;	
+			}	
 		}
 		case AS_PARTICLE_TYPE_MAP : {
 			val     = as_val_frombin(b);
